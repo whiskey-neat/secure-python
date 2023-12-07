@@ -1,6 +1,8 @@
 import socket
 from threading import Thread
 from datetime import datetime
+import pyfiglet
+import hashlib
 
 
 def listen_for_messages():
@@ -16,11 +18,20 @@ separator_token = "<SEP>"
 
 # create a socket
 server = socket.socket()
-print(f"[Client] Connecting to {HOST}:{PORT}...")
-
+# print(f"[Client] Connecting to {HOST}:{PORT}...")
 # connect to the server
 server.connect(SERVER_ADDR)
-print("[Client] Connection Successful!.\n")
+# print("[Client] Connection Successful!.\n")
+
+ascii_banner = pyfiglet.figlet_format("python chat app")
+print(ascii_banner)
+print("     !! You must be logged in to use this chat app !!\n")
+print("""##############################################################
+##							                                ##
+##    	 Contact an admin if you do not have a login.       ##
+##							                                ##
+##############################################################\n""")
+
 
 username = input("Enter your username: ")
 password = input("Enter your password: ")   # prompt the client for a username and password
@@ -33,8 +44,9 @@ print(response)
 if response != 'Authentication successful!':
     exit(0)
 
+
 # prompt the client for a name
-name = input("Enter your name: ")
+name = input("\nEnter your chat name: ")
 print("")
 
 # thread to listen for messages
@@ -49,10 +61,15 @@ while True:
     outgoing_message = input("")
     if outgoing_message.lower() == 'q':
         break
+
     # add the datetime and name to the message
     date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     outgoing_message = f"received: {date_now}\n{name}{separator_token}{outgoing_message}\n"
-    # send the message
+    # create a hash of the message
+    outgoing_message_hash = hashlib.sha512(outgoing_message.encode()).hexdigest()
+    # combine message with hash
+    outgoing_message = f"{outgoing_message}{separator_token}{outgoing_message_hash}"
+    # send the message and hash to the server
     server.send(outgoing_message.encode())
     print(f"sent: {date_now}\n")
 

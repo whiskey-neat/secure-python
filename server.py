@@ -1,5 +1,6 @@
 import socket
 from threading import Thread
+import hashlib
 
 from authentication import check_user_credentials
 
@@ -16,21 +17,32 @@ def authenticate_user(conn):
         conn.sendall('Authentication successful!'.encode('utf-8'))
         return True
     else:
+        print(f"[!] Error: [Authentication FAILED] Reason: Incorrect credentials for username: {username}")
         conn.sendall('Authentication failed.'.encode('utf-8'))
         conn.close()
         return False
 
 
-def listen_for_messages(conn):
+def listen_to_client(conn):
     while True:
         try:
-            message = conn.recv(1024).decode()  # listen for an incoming message
+            received_data = conn.recv(1024).decode()  # listen for an incoming message
+            message, received_hash = received_data.rsplit(separator_token, 1)
         except Exception as e:
             print(f"[!] Error: {e}")
             clients.remove(conn)  # remove client from set
             break
         else:
+            # generate hash of the message received
+            checked_hash = hashlib.sha512(message.encode()).hexdigest()
+
+            # if the hash of the received message is not equal to the hash of the message sent
+            if received_hash != checked_hash:
+                print("[-] Message is tampered!!")
+                continue
+
             message = message.replace(separator_token, ": ")
+
         # iterate over all connected sockets
         for each_client in clients:
             if each_client != conn:
@@ -61,14 +73,14 @@ while True:
     client_conn, client_address = s.accept()
 
     auth = Thread(target=authenticate_user, args=(client_conn,))
+    auth.start()
 
     print(f"[+] {client_address} successfully connected.")
 
-    auth.start()
     # add the new connected client to connected sockets
     clients.add(client_conn)
     # start a new thread that listens for each client's messages
-    t = Thread(target=listen_for_messages, args=(client_conn,))
+    t = Thread(target=listen_to_client, args=(client_conn,))
     # make the thread daemon, so it ends whenever the main thread ends
     t.daemon = True
     # start the thread

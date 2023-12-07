@@ -50,7 +50,7 @@ if __name__ == "__main__":
     write_to_csv(username, hashed_password, salt)
 
     # Check user credentials
-    if check_user_credentials(username, password):
-        print("Authentication successful!")
-    else:
-        print("Authentication failed.")
+    # if check_user_credentials(username, password):
+    #     print("Authentication successful!")
+    # else:
+    #     print("Authentication failed.")
