@@ -56,6 +56,9 @@ while True:
     menu_option = input("Enter your choice (1/2/3):")
 
     if menu_option == '1':
+        operation = 'login'
+        # send the operation to the server
+        server.sendall(operation.encode())
         username = input("Enter your username: ")
         password = input("Enter your password: ")  # prompt the client for a username and password
         # send the username and password with separator
@@ -92,7 +95,16 @@ while True:
 
         server.close()
     elif menu_option == '2':
-        user_registration()
+        operation = 'register'
+        # send the operation to the server
+        server.sendall(operation.encode())
+        username = input("Enter a username: ")
+        password = input("Enter a password: ")
+        # send the username and password with separator
+        credentials = f"{username}{separator_token}{password}"
+        server.sendall(credentials.encode())
+        response = server.recv(1024).decode()
+        print("\n" + response)
     elif menu_option == '3':
         print("Exiting... Goodbye!")
         break

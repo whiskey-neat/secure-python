@@ -4,42 +4,60 @@ import os
 import socket
 from threading import Thread
 from authentication import check_user_credentials
+from authentication import hash_and_salt
 
 
 def process_user_requests():
     # create a list of user requests
     with open("user_credentials_requests.csv", 'r') as requests_file:
         requests_reader = csv.reader(requests_file)
+        # create a list of all requests
         requests = list(requests_reader)
 
-    if not requests:
-        print("\nNo pending user requests.")
-        return
+    while True:
+        if not requests:
+            print("\nNo pending user requests.")
+            return
 
-    # print pending requests
-    print("Pending User Requests:")
-    for index, request in enumerate(requests, start=1):
-        print(f"{index}. {request}")
+        print(f"\n{'>>> Pending User Requests <<<':^40}")
+        print("-" * 40)
+        print(f"  {'Index': <10} {'Username': <30}")
 
-    index_option = input("Enter the index number of the quest to accept (0 to cancel): ")
-    if index_option == '0':
-        return
+        for index, request in enumerate(requests, start=1):
+            username = request[0]
+            print("  {:^5}      {:<30}".format(index, username))
 
-    try:
-        request_index = int(index_option) - 1
-        if 0 <= request_index < len(requests):
-            user_data = requests.pop(request_index)
-            with open('user_credentials.csv', 'a', newline='') as user_credentials_file:
-                writer = csv.writer(user_credentials_file)
-                writer.writerow(user_data)
-            with open('user_credentials_requests.csv', 'w', newline='') as requests_file:
-                requests_writer = csv.writer(requests_file)
-                requests_writer.writerows(requests)
-            print(f"User request {user_data} accepted and added to Databases.")
-        else:
-            print("Invalid index.")
-    except ValueError:
-        print("Invalid input. Please enter a valid index.")
+        print("-" * 40)
+
+        index_option = input("\nEnter the index number of the request to process (0 to cancel): ")
+        if index_option == '0':
+            return
+
+        try:
+            request_index = int(index_option) - 1
+            if 0 <= request_index < len(requests):
+                user_data = requests[request_index]
+
+                action = input(f"\nDo you want to accept the request from username: {user_data[0]} (y/n): ").lower()
+
+                if action == 'y':
+                    with open('user_credentials.csv', 'a', newline='') as user_credentials_file:
+                        writer = csv.writer(user_credentials_file)
+                        writer.writerow(user_data)
+                    print(f"User request {user_data[0]} successfully accepted!")
+                elif action == 'n':
+                    print(f"User request for {user_data[0]} rejected.")
+                else:
+                    print("Invalid option. Enter 'y' or 'n'")
+
+                requests.pop(request_index)
+                with open('user_credentials_requests.csv', 'w', newline='') as requests_file:
+                    requests_writer = csv.writer(requests_file)
+                    requests_writer.writerows(requests)
+            else:
+                print("Invalid index.")
+        except ValueError:
+            print("Invalid input. Please enter a valid index.")
 
 
 def authenticate_user(conn, separator):
@@ -88,6 +106,56 @@ def listen_for_messages(conn, addr, clients):
                 each_client.send(received_hash.encode())
 
 
+def register_user(conn, separator):
+    try:
+        # receive username and password from the client
+        credentials = conn.recv(1024).decode('utf-8').strip()
+
+        # split credentials into username and password
+        username, password = credentials.split(separator)
+
+        # create a list of existing user credentials
+        with open("user_credentials.csv", 'r') as user_credentials_file:
+            user_credentials_reader = csv.reader(user_credentials_file)
+            user_credentials = list(user_credentials_reader)
+
+        # check if the username is already taken by registered user
+        for user in user_credentials:
+            if user and user[0] == username:
+                conn.sendall('Username is already taken.'.encode('utf-8'))
+                return
+
+        # create a list of user requests
+        with open("user_credentials_requests.csv", 'r') as requests_file:
+            requests_reader = csv.reader(requests_file)
+            # create a list of all requests
+            requests = list(requests_reader)
+
+        # check if the username is already taken by requested user
+        for request in requests:
+            if request and request[0] == username:
+                conn.sendall('Username is already taken.'.encode('utf-8'))
+                return
+
+        # add the new user to the list of requests
+        hashed_password, salt = hash_and_salt(password)
+        requested_credentials = [username, hashed_password, salt]
+
+        # append the list of requests to user_credentials_requests.csv
+        with open("user_credentials_requests.csv", 'a', newline='') as requests_file:
+            requests_writer = csv.writer(requests_file)
+            requests_writer.writerow(requested_credentials)
+
+        conn.sendall('Request sent successfully!'.encode('utf-8'))
+        conn.close()
+        return
+    except Exception as e:
+        print(f"[!] Error: {e}")
+        conn.sendall('Request failed.'.encode('utf-8'))
+        conn.close()
+        return
+
+
 def server_creation(server_ip, server_port, server_address):
     # initialise a set of all connected clients
     clients = set()
@@ -103,15 +171,23 @@ def server_creation(server_ip, server_port, server_address):
             client_conn, client_addr = server.accept()
             print(f"[+] {client_addr} has connected to the server.")
 
-            # Spawn a new thread for each client to handle authentication
-            auth = Thread(target=authenticate_user, args=(client_conn, separator_token))
-            auth.start()
+            received_operation = client_conn.recv(1024).decode()  # listen for an incoming message
 
-            clients.add(client_conn)
+            if received_operation == 'login':
+                # Spawn a new thread for each client to handle authentication
+                auth = Thread(target=authenticate_user, args=(client_conn, separator_token))
+                auth.start()
 
-            # start a new thread that listens for each client's messages
-            listen_thread = Thread(target=listen_for_messages, args=(client_conn, client_addr, clients))
-            listen_thread.start()
+                clients.add(client_conn)
+
+                # start a new thread that listens for each client's messages
+                listen_thread = Thread(target=listen_for_messages, args=(client_conn, client_addr, clients))
+                listen_thread.start()
+                continue
+            elif received_operation == 'register':
+                # start a new thread to handle user registration
+                register_thread = Thread(target=register_user, args=(client_conn, separator_token))
+                register_thread.start()
 
         except Exception as e:
             print(f"[!] Error accepting connection: {e}")
