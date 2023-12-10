@@ -1,77 +1,100 @@
-import socket
-from threading import Thread
-from datetime import datetime
 import pyfiglet
+import socket
 import hashlib
+
+from datetime import datetime
+from threading import Thread
 
 
 def listen_for_messages():
     while True:
-        message = server.recv(1024).decode()
-        print("\n" + message)
+        received_data = server.recv(1024).decode()
+        received_hash = server.recv(1024).decode()
+        sender, message = received_data.split(separator_token)
+        checked_hash = hashlib.sha512(message.encode()).hexdigest()
+        if received_hash != checked_hash:
+            print("This message was tampered!!")
+        else:
+            date_received = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"\n[{sender}] : {message}")
+            print(f"received: {date_received}")
 
 
-HOST = "127.0.0.1"          # server IP
-PORT = 5002                 # server PORT
-SERVER_ADDR = (HOST, PORT)  # server ADDRESS
+HOST = '127.0.0.1'
+PORT = 5002
+SERVER_ADDR = (HOST, PORT)
 separator_token = "<SEP>"
 
-# create a socket
+# create socket to connect to server
 server = socket.socket()
-# print(f"[Client] Connecting to {HOST}:{PORT}...")
-# connect to the server
-server.connect(SERVER_ADDR)
-# print("[Client] Connection Successful!.\n")
+try:
+    print("\nEstablishing connection to chat server")
+    server.connect(SERVER_ADDR)
+    print("Connection successful!")
+except socket.error as e:
+    print(f"Error connecting to server: {e}")
+    print("""\n###############################################################
+##                                                           ##
+##    	          !! Server may be down !!                   ##
+##            Contact your system administrator              ##
+##                                                           ##
+###############################################################\n""")
+    exit(1)
+
 
 ascii_banner = pyfiglet.figlet_format("python chat app")
 print(ascii_banner)
-print("     !! You must be logged in to use this chat app !!\n")
-print("""##############################################################
-##							                                ##
-##    	 Contact an admin if you do not have a login.       ##
-##							                                ##
-##############################################################\n""")
-
-
-username = input("Enter your username: ")
-password = input("Enter your password: ")   # prompt the client for a username and password
-# send the username and password with separator
-credentials = f"{username}{separator_token}{password}"
-server.sendall(credentials.encode())
-
-response = server.recv(1024).decode()   # receive response from the server
-print(response)
-if response != 'Authentication successful!':
-    exit(0)
-
-
-# prompt the client for a name
-name = input("\nEnter your chat name: ")
-print("")
-
-# thread to listen for messages
-t = Thread(target=listen_for_messages)
-# thread ends with main thread
-t.daemon = True
-# start the thread
-t.start()
 
 while True:
-    # input message we want to send to the server
-    outgoing_message = input("")
-    if outgoing_message.lower() == 'q':
+    print("\n-----------------------")
+    print(":: Client Main Menu ::")
+    print("-----------------------")
+    print("1. Login")
+    print("2. Request to Register")
+    print("3. Exit")
+
+    menu_option = input("Enter your choice (1/2/3):")
+
+    if menu_option == '1':
+        username = input("Enter your username: ")
+        password = input("Enter your password: ")  # prompt the client for a username and password
+        # send the username and password with separator
+        credentials = f"{username}{separator_token}{password}"
+        server.sendall(credentials.encode())
+
+        response = server.recv(1024).decode()  # receive response from the server
+        print("\n" + response)
+        if response != 'Authentication successful!':
+            exit(0)
+
+        listen_thread = Thread(target=listen_for_messages)
+        listen_thread.daemon = True
+        listen_thread.start()
+
+        print("\nYou are now logged in!")
+        print("Enter your messages below:")
+        while True:
+            # user inputs a message
+            outgoing_message = input("\n")
+            if outgoing_message.lower() == 'exit':
+                break
+            # create hash of message
+            outgoing_message_hash = hashlib.sha512(outgoing_message.encode()).hexdigest()
+            # # send username, message, and hash of message
+            # outgoing_message = f"{username}{separator_token}{outgoing_message}{separator_token}{outgoing_message_hash}"
+            outgoing_message = f"{username}{separator_token}{outgoing_message}"
+            server.sendall(outgoing_message.encode())
+            server.sendall(outgoing_message_hash.encode())
+
+            date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            print(f"sent: {date_now}")
+            print("")
+
+        server.close()
+    elif menu_option == '2':
+        user_registration()
+    elif menu_option == '3':
+        print("Exiting... Goodbye!")
         break
-
-    # add the datetime and name to the message
-    date_now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    outgoing_message = f"received: {date_now}\n{name}{separator_token}{outgoing_message}\n"
-    # create a hash of the message
-    outgoing_message_hash = hashlib.sha512(outgoing_message.encode()).hexdigest()
-    # combine message with hash
-    outgoing_message = f"{outgoing_message}{separator_token}{outgoing_message_hash}"
-    # send the message and hash to the server
-    server.send(outgoing_message.encode())
-    print(f"sent: {date_now}\n")
-
-# close the socket
-server.close()
+    else:
+        print("Invalid option.")
